@@ -25,7 +25,7 @@ dp.include_router(router)
 # Инициализация базы данных
 db = Database("black_russia_market.db")
 
-# Создание веб-сервера для Railway
+# Создание веб-сервера для Render
 app = web.Application()
 
 # Health check endpoint
