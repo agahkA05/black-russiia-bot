@@ -1,7 +1,9 @@
 import logging
 import sqlite3
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import requests
+import json
+import time
+import threading
 
 # Настройка логирования
 logging.basicConfig(
@@ -12,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Токен бота
 BOT_TOKEN = "8172843951:AAFHMnhFITsIlnA9EwgpVenTHg47UO64bys"
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Инициализация базы данных
 def init_database():
@@ -45,23 +48,33 @@ def init_database():
     conn.commit()
     conn.close()
 
+def send_message(chat_id, text, reply_markup=None):
+    """Отправка сообщения"""
+    url = f"{BASE_URL}/sendMessage"
+    data = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'Markdown'
+    }
+    if reply_markup:
+        data['reply_markup'] = json.dumps(reply_markup)
+    
+    response = requests.post(url, data=data)
+    return response.json()
+
 def get_main_menu():
     """Главное меню"""
-    keyboard = [
-        [KeyboardButton("🔍 Найти товары"), KeyboardButton("📝 Разместить объявление")],
-        [KeyboardButton("⭐ Избранное"), KeyboardButton("👤 Профиль")],
-        [KeyboardButton("📋 Правила"), KeyboardButton("❓ Помощь")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return {
+        'keyboard': [
+            [{'text': '🔍 Найти товары'}, {'text': '📝 Разместить объявление'}],
+            [{'text': '⭐ Избранное'}, {'text': '👤 Профиль'}],
+            [{'text': '📋 Правила'}, {'text': '❓ Помощь'}]
+        ],
+        'resize_keyboard': True
+    }
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_start(chat_id, user_id, username, first_name, last_name):
     """Обработчик команды /start"""
-    user = update.effective_user
-    user_id = user.id
-    username = user.username
-    first_name = user.first_name
-    last_name = user.last_name
-    
     # Добавляем пользователя в базу
     conn = sqlite3.connect('black_russia_market.db')
     cursor = conn.cursor()
@@ -72,15 +85,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    await update.message.reply_text(
-        "🎮 **Добро пожаловать в Black Russia Bot!**\n\n"
-        "Здесь ты можешь покупать и продавать игровые предметы!\n\n"
-        "**Выбери действие:**",
-        reply_markup=get_main_menu(),
-        parse_mode='Markdown'
-    )
+    text = "🎮 **Добро пожаловать в Black Russia Bot!**"
+    
+    send_message(chat_id, text, get_main_menu())
 
-async def search_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_search_items(chat_id):
     """Поиск товаров"""
     conn = sqlite3.connect('black_russia_market.db')
     cursor = conn.cursor()
@@ -98,7 +107,7 @@ async def search_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not ads:
-        await update.message.reply_text("📭 Пока нет объявлений. Будь первым!")
+        send_message(chat_id, "📭 Пока нет объявлений. Будь первым!")
         return
     
     text = "🔍 **Найденные товары:**\n\n"
@@ -108,25 +117,21 @@ async def search_items(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"👤 Продавец: @{ad[7] or 'Не указан'}\n"
         text += f"🕒 {ad[6]}\n\n"
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    send_message(chat_id, text)
 
-async def create_ad(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_create_ad(chat_id):
     """Создание объявления"""
-    await update.message.reply_text(
-        "📝 **Создание объявления**\n\n"
-        "Для создания объявления используй команду /create_ad\n"
-        "Или напиши мне в личные сообщения!",
-        parse_mode='Markdown'
-    )
+    text = ("📝 **Создание объявления**\n\n"
+            "Для создания объявления используй команду /create_ad\n"
+            "Или напиши мне в личные сообщения!")
+    send_message(chat_id, text)
 
-async def favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_favorites(chat_id):
     """Избранное"""
-    await update.message.reply_text("⭐ **Избранное**\n\nПока пусто. Добавь товары в избранное!")
+    send_message(chat_id, "⭐ **Избранное**\n\nПока пусто. Добавь товары в избранное!")
 
-async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_profile(chat_id, user_id):
     """Профиль пользователя"""
-    user_id = update.effective_user.id
-    
     conn = sqlite3.connect('black_russia_market.db')
     cursor = conn.cursor()
     
@@ -135,62 +140,105 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn.close()
     
-    text = f"👤 **Твой профиль**\n\n"
-    text += f"🆔 ID: {user_id}\n"
-    text += f"📝 Объявлений: {ads_count}\n"
-    text += f"⭐ Рейтинг: 5.0\n"
+    text = (f"👤 **Твой профиль**\n\n"
+            f"🆔 ID: {user_id}\n"
+            f"📝 Объявлений: {ads_count}\n"
+            f"⭐ Рейтинг: 5.0\n")
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    send_message(chat_id, text)
 
-async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_rules(chat_id):
     """Правила"""
-    text = "📋 **Правила Black Russia Bot**\n\n"
-    text += "1. 🚫 Запрещены мошенничество и обман\n"
-    text += "2. 📸 Обязательно прикрепляй фото товара\n"
-    text += "3. 💰 Указывай реальную цену\n"
-    text += "4. 🏷️ Правильно выбирай категорию\n"
-    text += "5. 👤 Не создавай фейковые аккаунты\n\n"
-    text += "**Нарушение правил = бан! ⚠️**"
+    text = ("📋 **Правила Black Russia Bot**\n\n"
+            "1. 🚫 Запрещены мошенничество и обман\n"
+            "2. 📸 Обязательно прикрепляй фото товара\n"
+            "3. 💰 Указывай реальную цену\n"
+            "4. 🏷️ Правильно выбирай категорию\n"
+            "5. 👤 Не создавай фейковые аккаунты\n\n"
+            "**Нарушение правил = бан! ⚠️**")
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    send_message(chat_id, text)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_help(chat_id):
     """Помощь"""
-    text = "❓ **Помощь**\n\n"
-    text += "🔍 **Найти товары** - просмотр объявлений\n"
-    text += "📝 **Разместить объявление** - создать новое\n"
-    text += "⭐ **Избранное** - сохраненные товары\n"
-    text += "👤 **Профиль** - твоя статистика\n"
-    text += "📋 **Правила** - правила использования\n\n"
-    text += "**По вопросам: @Aga_05**"
+    text = ("❓ **Помощь**\n\n"
+            "Используй кнопки меню для навигации.\n\n"
+            "**По вопросам: @Aga_05**")
     
-    await update.message.reply_text(text, parse_mode='Markdown')
+    send_message(chat_id, text)
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик всех остальных сообщений"""
-    await update.message.reply_text("Не понимаю. Используй кнопки меню! 🤔")
+def handle_message(update):
+    """Обработка сообщения"""
+    message = update.get('message', {})
+    chat_id = message.get('chat', {}).get('id')
+    user = message.get('from', {})
+    user_id = user.get('id')
+    username = user.get('username')
+    first_name = user.get('first_name')
+    last_name = user.get('last_name')
+    text = message.get('text', '')
+    
+    if not chat_id or not user_id:
+        return
+    
+    if text == '/start':
+        handle_start(chat_id, user_id, username, first_name, last_name)
+    elif text == '🔍 Найти товары':
+        handle_search_items(chat_id)
+    elif text == '📝 Разместить объявление':
+        handle_create_ad(chat_id)
+    elif text == '⭐ Избранное':
+        handle_favorites(chat_id)
+    elif text == '👤 Профиль':
+        handle_profile(chat_id, user_id)
+    elif text == '📋 Правила':
+        handle_rules(chat_id)
+    elif text == '❓ Помощь':
+        handle_help(chat_id)
+    else:
+        send_message(chat_id, "Не понимаю. Используй кнопки меню! 🤔")
+
+def get_updates(offset=None):
+    """Получение обновлений"""
+    url = f"{BASE_URL}/getUpdates"
+    params = {'timeout': 30}
+    if offset:
+        params['offset'] = offset
+    
+    try:
+        response = requests.get(url, params=params, timeout=35)
+        return response.json()
+    except:
+        return {'ok': False, 'result': []}
+
+def bot_loop():
+    """Основной цикл бота"""
+    offset = None
+    logger.info("Бот запущен!")
+    
+    while True:
+        try:
+            updates = get_updates(offset)
+            
+            if updates.get('ok'):
+                for update in updates.get('result', []):
+                    handle_message(update)
+                    offset = update.get('update_id', 0) + 1
+            else:
+                logger.error(f"Ошибка получения обновлений: {updates}")
+                time.sleep(5)
+                
+        except Exception as e:
+            logger.error(f"Ошибка в основном цикле: {e}")
+            time.sleep(5)
 
 def main():
     """Главная функция"""
     # Инициализация базы данных
     init_database()
     
-    # Создание приложения
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Регистрация обработчиков
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Regex("^🔍 Найти товары$"), search_items))
-    application.add_handler(MessageHandler(filters.Regex("^📝 Разместить объявление$"), create_ad))
-    application.add_handler(MessageHandler(filters.Regex("^⭐ Избранное$"), favorites))
-    application.add_handler(MessageHandler(filters.Regex("^👤 Профиль$"), profile))
-    application.add_handler(MessageHandler(filters.Regex("^📋 Правила$"), rules))
-    application.add_handler(MessageHandler(filters.Regex("^❓ Помощь$"), help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-    
     # Запуск бота
-    print("Бот запущен!")
-    application.run_polling()
+    bot_loop()
 
 if __name__ == '__main__':
     main()
