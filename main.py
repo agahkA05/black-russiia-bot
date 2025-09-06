@@ -208,13 +208,18 @@ def get_updates(offset=None):
     try:
         response = requests.get(url, params=params, timeout=35)
         return response.json()
-    except:
+    except Exception as e:
+        logger.error(f"Ошибка получения обновлений: {e}")
         return {'ok': False, 'result': []}
 
 def bot_loop():
     """Основной цикл бота"""
     offset = None
     logger.info("Бот запущен!")
+    
+    # Ждем подключения к сети
+    logger.info("Ожидание подключения к сети...")
+    time.sleep(10)
     
     while True:
         try:
@@ -225,12 +230,12 @@ def bot_loop():
                     handle_message(update)
                     offset = update.get('update_id', 0) + 1
             else:
-                logger.error(f"Ошибка получения обновлений: {updates}")
-                time.sleep(5)
+                logger.warning(f"Ошибка получения обновлений: {updates}")
+                time.sleep(10)
                 
         except Exception as e:
             logger.error(f"Ошибка в основном цикле: {e}")
-            time.sleep(5)
+            time.sleep(10)
 
 def main():
     """Главная функция"""
