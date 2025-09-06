@@ -1,18 +1,14 @@
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-import os
-from dotenv import load_dotenv
 
 from config import BOT_TOKEN
 from handlers import router
 from database import Database
-
-# Загружаем переменные окружения
-load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -92,7 +88,7 @@ async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     
-    # Получаем порт от Railway
+    # Получаем порт от Render
     port = int(os.environ.get("PORT", 8000))
     
     # Запуск веб-сервера
