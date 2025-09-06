@@ -1,0 +1,18 @@
+# Токен вашего Telegram бота
+# Получите у @BotFather
+BOT_TOKEN=your_bot_token_here
+
+# Настройки базы данных
+DATABASE_PATH=black_russia_market.db
+
+# Настройки VIP
+VIP_PRICE_STARS=150
+VIP_DURATION_DAYS=30
+
+# Настройки файлов
+UPLOAD_PATH=uploads/
+MAX_PHOTOS_PER_AD=5
+MAX_PHOTOS_VIP=15
+
+
+
